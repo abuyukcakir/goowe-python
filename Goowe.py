@@ -33,7 +33,8 @@ class Goowe(StreamModel):
 
         self._num_of_current_classifiers = 0
         self._num_of_processed_instances = 0
-        self._classifiers = np.array((self._num_of_max_classifiers))
+        self._classifiers = np.empty((self._num_of_max_classifiers),
+                                     dtype=object)
         self._weights = np.zeros((self._num_of_max_classifiers))
 
         # What to save from current Data Chunk --> will be used for
@@ -48,19 +49,28 @@ class Goowe(StreamModel):
         self._chunk_data = None
         # self._chunk_truths = FastBuffer(max_size=chunk_size)
 
+        # some external stuff that is about the data we are dealing with
+        # but useful for recording predictions
+        self._num_classes = None
+
         # TODO: Implement Sliding Window Continuous Evaluator.
         # What to save at Sliding Window (last n instances) --> will be
         # used for continuous evaluation.
         # self._sliding_window_ensemble_preds =FastBuffer(max_size=window_size)
         # self._sliding_window_truths = FastBuffer(max_size=window_size)
 
-    def prepare_post_analysis_req(self, num_features, num_targets):
+    def prepare_post_analysis_req(self, num_features, num_targets, num_classes):
         # Need to get the dataset information but we do not want to
         # take it as an argument to the classifier itself, nor we do want to
         # ask it at each data instance. Hence we take dataset info from user
         # explicitly to create _chunk_data entries.
         self._chunk_data = InstanceWindow(n_features=num_features,
                                           n_targets=num_targets)
+
+        # num_targets shows how many columns you want to predict in the data.
+        # num classes is eqv to possible number of values that that column
+        # can have.
+        self._num_classes = num_classes
         return
 
     def _get_components_predictions_for_instance(self, inst):
@@ -77,12 +87,14 @@ class Goowe(StreamModel):
             A 2-d numpy array where each row corresponds to predictions of
             each classifier.
         """
-        preds = np.ndarray(shape=(self._num_of_current_classifiers,
-                                  self._num_of_classes))
+        preds = np.zeros((self._num_of_current_classifiers, self._num_classes))
+        print(np.shape(preds))
         for k in range(len(preds)):
-            kth_comp_pred = self._classifiers[k].get_votes_for_instance(inst)
-            print("Component {}'s Prediction: {}".format(k, kth_comp_pred))
-            preds[k] = kth_comp_pred
+            kth_comp_pred = self._classifiers[k].predict_proba(inst)
+            # print(kth_comp_pred[0])
+            # print(preds)
+            # print("Component {}'s Prediction: {}".format(k, kth_comp_pred))
+            preds[k, :] = kth_comp_pred[0]
 
         return preds
 
@@ -97,14 +109,19 @@ class Goowe(StreamModel):
 
         # Go over all the data chunk, calculate values of (S_i x S_j) for A.
         # (S_i x O) for d.
-        y_all = self._chunk_data.get_targets_matrix()
+        y_all = self._chunk_data.get_targets_matrix().astype(int)
         for i in range(len(y_all)):
             class_index = y_all[i]
-            A = A + self._chunk_comp_preds[i].dot(self._chunk_comp_preds[i].T)
-            d = d + self._chunk_comp_preds[i, class_index]
+            comp_preds = self._chunk_comp_preds.get_next_element()
+            print("components predictions:")
+            print(comp_preds)
+
+            A = A + comp_preds.dot(comp_preds.T)
+            d = d + comp_preds[class_index]
 
         # A and d are filled. Now, the linear system Aw=d to be solved
         # to get our desired weights. w is of size K.
+        print("Solving Aw=d")
         w = np.linalg.solve(A, d)
 
         # _weights has maximum size but what we found can be
@@ -172,14 +189,12 @@ class Goowe(StreamModel):
         # Can be parallelized.
         data_features = self._chunk_data.get_attributes_matrix()
         data_truths = self._chunk_data.get_targets_matrix()
+        data_truths = data_truths.astype(int).flatten()
 
         print("Starting training the components with the current chunk...")
-        for k in range(len(self._num_of_current_classifiers)):
-            for i in range(len(self._chunk_size)):
-                # Classifier (e.g. HT) must have partial_fit() for training
-                X = data_features[i]
-                y = data_truths[i]
-                self._classifiers[k].partial_fit(X, y)
+        for k in range(self._num_of_current_classifiers):
+            print("Training classifier {}".format(k))
+            self._classifiers[k].partial_fit(data_features, data_truths)
         print("Training the components with the current chunk completed...")
         return
 
@@ -195,13 +210,14 @@ class Goowe(StreamModel):
         # current data chunk, wait for it to be filled.
         self._num_of_processed_instances += 1
 
-        # Save X and y to train classifiers later.
-        self._chunk_data.add_element(X, y)
+        # Save X and y to train classifiers later
+        # y is required to be 1x1, and hence the square bracketts.
+        self._chunk_data.add_element(X, [y])
 
         # If at the end of a chunk, start training components
         # and adjusting weights using information in this chunk.
         if(self._num_of_processed_instances % self._chunk_size == 0):
-            self._process_chunk(self._current_chunk)
+            self._process_chunk()
 
     def predict(self, X):
         """ For a given data instance, yields the binary prediction values.
@@ -239,13 +255,17 @@ class Goowe(StreamModel):
             represents class score of corresponding class for this instance.
         """
         weights = np.array(self._weights)
+
+        # get only the useful weights
+        weights = weights[:self._num_of_current_classifiers]
         components_preds = self._get_components_predictions_for_instance(X)
 
         # Save individual component predictions and ensemble prediction
         # for later analysis.
         self._chunk_comp_preds.add_element(components_preds)
 
-        weighted_ensemble_vote = np.dot(components_preds.T, weights)
+        weighted_ensemble_vote = np.dot(weights, components_preds)
+        print("Weighted Ensemble vote: {}".format(weighted_ensemble_vote))
         self._chunk_ensm_preds.add_element(weighted_ensemble_vote)
 
         return weighted_ensemble_vote

@@ -9,6 +9,9 @@ stream.prepare_for_use()
 
 num_features = stream.n_features
 num_targets = stream.n_targets
+print(stream.get_target_values())
+num_classes = len(stream.get_target_values())
+
 N_MAX_CLASSIFIERS = 15
 CHUNK_SIZE = 500        # User-specified
 WINDOW_SIZE = 100       # User-specified
@@ -17,7 +20,7 @@ WINDOW_SIZE = 100       # User-specified
 goowe = Goowe(n_max_components=N_MAX_CLASSIFIERS,
               chunk_size=CHUNK_SIZE,
               window_size=WINDOW_SIZE)
-goowe.prepare_post_analysis_req(num_features, num_targets)
+goowe.prepare_post_analysis_req(num_features, num_targets, num_classes)
 
 # For the first chunk, there is no prediction.
 for i in range(CHUNK_SIZE):
