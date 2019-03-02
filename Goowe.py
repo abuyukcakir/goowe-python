@@ -35,7 +35,7 @@ class Goowe(StreamModel):
         self._num_of_processed_instances = 0
         self._classifiers = np.empty((self._num_of_max_classifiers),
                                      dtype=object)
-        self._weights = np.zeros((self._num_of_max_classifiers))
+        self._weights = np.zeros((self._num_of_max_classifiers,))
 
         # What to save from current Data Chunk --> will be used for
         # adjusting weights, pruning purposes and so on.
@@ -65,7 +65,8 @@ class Goowe(StreamModel):
         # ask it at each data instance. Hence we take dataset info from user
         # explicitly to create _chunk_data entries.
         self._chunk_data = InstanceWindow(n_features=num_features,
-                                          n_targets=num_targets)
+                                          n_targets=num_targets,
+                                          max_size=self._chunk_size)
 
         # num_targets shows how many columns you want to predict in the data.
         # num classes is eqv to possible number of values that that column
@@ -88,7 +89,7 @@ class Goowe(StreamModel):
             each classifier.
         """
         preds = np.zeros((self._num_of_current_classifiers, self._num_classes))
-        print(np.shape(preds))
+        # print(np.shape(preds))
         for k in range(len(preds)):
             kth_comp_pred = self._classifiers[k].predict_proba(inst)
             # print(kth_comp_pred[0])
@@ -110,18 +111,22 @@ class Goowe(StreamModel):
         # Go over all the data chunk, calculate values of (S_i x S_j) for A.
         # (S_i x O) for d.
         y_all = self._chunk_data.get_targets_matrix().astype(int)
+        # print(y_all)
+        print(len(y_all))
         for i in range(len(y_all)):
             class_index = y_all[i]
             comp_preds = self._chunk_comp_preds.get_next_element()
-            print("components predictions:")
-            print(comp_preds)
+            # print("{} components predictions:".format(i))
+            # print(comp_preds)
 
             A = A + comp_preds.dot(comp_preds.T)
-            d = d + comp_preds[class_index]
+            d = d + comp_preds[0][class_index]
 
         # A and d are filled. Now, the linear system Aw=d to be solved
         # to get our desired weights. w is of size K.
-        print("Solving Aw=d")
+        # print("Solving Aw=d")
+        # print(A)
+        # print(d)
         w = np.linalg.solve(A, d)
 
         # _weights has maximum size but what we found can be
@@ -131,6 +136,8 @@ class Goowe(StreamModel):
                 self._weights[i] = w[i]
         else:                             # If full size, there is no problem.
             self._weights = w
+        print("After solving Aw=d weights:")
+        print(self._weights)
         return
 
     def _normalize_weights(self):
@@ -140,7 +147,12 @@ class Goowe(StreamModel):
         """
         min = np.amin(self._weights[:self._num_of_current_classifiers])
         max = np.amax(self._weights[:self._num_of_current_classifiers])
-        self._weights = (self._weights - min) / (max - min)
+
+        if(min == max):
+            for i in range(self._num_of_current_classifiers):
+                self._weights[i] = 1. / self._num_of_current_classifiers
+        else:
+            self._weights = (self._weights - min) / (max - min)
         return
 
     def _process_chunk(self):
@@ -156,6 +168,7 @@ class Goowe(StreamModel):
         new_clf = HoeffdingTree()  # with default parameters for now
         new_clf.reset()
 
+
         # Case 1: No classifier in the ensemble yet, first chunk:
         if(self._num_of_current_classifiers == 0):
             self._classifiers[0] = new_clf
@@ -166,13 +179,15 @@ class Goowe(StreamModel):
             # according to what happened in this chunk.
             self._adjust_weights()
             self._normalize_weights()       # maybe useful. we'll see.
-
+            print("After normalization weights: ")
+            print(self._weights)
             # Case 2: There are classifiers in the ensemble but
             # the ensemble size is still not capped.
             if(self._num_of_current_classifiers < self._num_of_max_classifiers):
                 # Put the new classifier to ensemble with the weight of 1
+
                 self._classifiers[self._num_of_current_classifiers] = new_clf
-                self._weights[self._num_of_current_classifiers] = 1.0
+                self._weights[self._num_of_current_classifiers] = float(1.0)
                 self._num_of_current_classifiers += 1
 
             # Case 3: Ensemble size is capped. Need to replace the component
@@ -216,6 +231,7 @@ class Goowe(StreamModel):
 
         # If at the end of a chunk, start training components
         # and adjusting weights using information in this chunk.
+        print("Instance {}".format(self._num_of_processed_instances))
         if(self._num_of_processed_instances % self._chunk_size == 0):
             self._process_chunk()
 
@@ -262,7 +278,9 @@ class Goowe(StreamModel):
 
         # Save individual component predictions and ensemble prediction
         # for later analysis.
-        self._chunk_comp_preds.add_element(components_preds)
+        self._chunk_comp_preds.add_element([components_preds])
+        # print(components_preds)
+        # print(self._chunk_comp_preds.peek())
 
         weighted_ensemble_vote = np.dot(weights, components_preds)
         print("Weighted Ensemble vote: {}".format(weighted_ensemble_vote))
