@@ -148,11 +148,12 @@ class Goowe(StreamModel):
         min = np.amin(self._weights[:self._num_of_current_classifiers])
         max = np.amax(self._weights[:self._num_of_current_classifiers])
 
-        if(min == max):
+        if(min == max):     # all weights are the same
             for i in range(self._num_of_current_classifiers):
                 self._weights[i] = 1. / self._num_of_current_classifiers
         else:
-            self._weights = (self._weights - min) / (max - min)
+            for i in range(self._num_of_current_classifiers):
+                self._weights[i] = (self._weights[i] - min) / (max - min)
         return
 
     def _process_chunk(self):
@@ -167,7 +168,6 @@ class Goowe(StreamModel):
         """
         new_clf = HoeffdingTree()  # with default parameters for now
         new_clf.reset()
-
 
         # Case 1: No classifier in the ensemble yet, first chunk:
         if(self._num_of_current_classifiers == 0):
