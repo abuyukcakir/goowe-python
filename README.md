@@ -10,9 +10,11 @@ Working prototype of GOOWE (single-label version). Run experiment.py for a simpl
 
 ### TODO
 
-[] Implement Multi-label version, i.e. GOOWE-ML
-[] Compatibility with scikit-multiflow evaluators
-[] Ensemble pruning strategy
+- [x] Implement single-label version, GOOWE
+- [ ] Implement multi-label version, i.e. GOOWE-ML
+- [ ] Compatibility with scikit-multiflow evaluators
+- [ ] Ensemble pruning strategy
+- [ ] Concept Drift Detection strategy
 
 
 ### Notes
