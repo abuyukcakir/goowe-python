@@ -112,7 +112,6 @@ class Goowe(StreamModel):
         # (S_i x O) for d.
         y_all = self._chunk_data.get_targets_matrix().astype(int)
         # print(y_all)
-        print(len(y_all))
         for i in range(len(y_all)):
             class_index = y_all[i]
             comp_preds = self._chunk_comp_preds.get_next_element()
@@ -136,8 +135,8 @@ class Goowe(StreamModel):
                 self._weights[i] = w[i]
         else:                             # If full size, there is no problem.
             self._weights = w
-        print("After solving Aw=d weights:")
-        print(self._weights)
+        # print("After solving Aw=d weights:")
+        # print(self._weights)
         return
 
     def _normalize_weights(self):
@@ -178,14 +177,10 @@ class Goowe(StreamModel):
             # First, adjust the weights of the old component classifiers
             # according to what happened in this chunk.
             self._adjust_weights()
-            self._normalize_weights()       # maybe useful. we'll see.
-            print("After normalization weights: ")
-            print(self._weights)
             # Case 2: There are classifiers in the ensemble but
             # the ensemble size is still not capped.
             if(self._num_of_current_classifiers < self._num_of_max_classifiers):
                 # Put the new classifier to ensemble with the weight of 1
-
                 self._classifiers[self._num_of_current_classifiers] = new_clf
                 self._weights[self._num_of_current_classifiers] = float(1.0)
                 self._num_of_current_classifiers += 1
@@ -199,6 +194,10 @@ class Goowe(StreamModel):
                 self._classifiers[index_of_lowest_weight] = new_clf
                 self._weights[index_of_lowest_weight] = 1.0
 
+            # Normalizing weigths to simplify numbers
+            self._normalize_weights()       # maybe useful. we'll see.
+            print("After normalization weights: ")
+            print(self._weights)
         # Ensemble maintenance is done. Now train all classifiers
         # in the ensemble from the current chunk.
         # Can be parallelized.
@@ -231,8 +230,8 @@ class Goowe(StreamModel):
 
         # If at the end of a chunk, start training components
         # and adjusting weights using information in this chunk.
-        print("Instance {}".format(self._num_of_processed_instances))
         if(self._num_of_processed_instances % self._chunk_size == 0):
+            print("Instance {}".format(self._num_of_processed_instances))
             self._process_chunk()
 
     def predict(self, X):
@@ -279,11 +278,9 @@ class Goowe(StreamModel):
         # Save individual component predictions and ensemble prediction
         # for later analysis.
         self._chunk_comp_preds.add_element([components_preds])
-        # print(components_preds)
-        # print(self._chunk_comp_preds.peek())
 
         weighted_ensemble_vote = np.dot(weights, components_preds)
-        print("Weighted Ensemble vote: {}".format(weighted_ensemble_vote))
+        # print("Weighted Ensemble vote: {}".format(weighted_ensemble_vote))
         self._chunk_ensm_preds.add_element(weighted_ensemble_vote)
 
         return weighted_ensemble_vote
