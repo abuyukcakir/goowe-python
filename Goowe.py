@@ -52,6 +52,7 @@ class Goowe(StreamModel):
         # some external stuff that is about the data we are dealing with
         # but useful for recording predictions
         self._num_classes = None
+        self._target_values = None
 
         # TODO: Implement Sliding Window Continuous Evaluator.
         # What to save at Sliding Window (last n instances) --> will be
@@ -59,7 +60,8 @@ class Goowe(StreamModel):
         # self._sliding_window_ensemble_preds =FastBuffer(max_size=window_size)
         # self._sliding_window_truths = FastBuffer(max_size=window_size)
 
-    def prepare_post_analysis_req(self, num_features, num_targets, num_classes):
+    def prepare_post_analysis_req(self, num_features, num_targets,
+                                  num_classes, target_values):
         # Need to get the dataset information but we do not want to
         # take it as an argument to the classifier itself, nor we do want to
         # ask it at each data instance. Hence we take dataset info from user
@@ -72,6 +74,7 @@ class Goowe(StreamModel):
         # num classes is eqv to possible number of values that that column
         # can have.
         self._num_classes = num_classes
+        self._target_values = target_values
         return
 
     def _get_components_predictions_for_instance(self, inst):
@@ -126,7 +129,7 @@ class Goowe(StreamModel):
         # print("Solving Aw=d")
         # print(A)
         # print(d)
-        w = np.linalg.solve(A, d)
+        w = np.linalg.lstsq(A, d, rcond=None)[0]
 
         # _weights has maximum size but what we found can be
         # smaller. Therefore, need to put the values of w to global weights
@@ -208,7 +211,8 @@ class Goowe(StreamModel):
         print("Starting training the components with the current chunk...")
         for k in range(self._num_of_current_classifiers):
             print("Training classifier {}".format(k))
-            self._classifiers[k].partial_fit(data_features, data_truths)
+            self._classifiers[k].partial_fit(data_features, data_truths,
+                                             classes=self._target_values)
         print("Training the components with the current chunk completed...")
         return
 
