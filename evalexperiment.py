@@ -8,8 +8,8 @@ from Goowe import Goowe
 
 # Prepare the data stream
 stream = FileStream('./datasets/sea_stream.csv')
-stream.prepare_for_use()
 
+stream.prepare_for_use()
 num_features = stream.n_features
 num_targets = stream.n_targets
 num_classes = stream.n_classes
