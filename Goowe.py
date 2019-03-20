@@ -220,40 +220,73 @@ class Goowe(StreamModel):
                                   "is implemented. Use partial_fit()")
 
     def partial_fit(self, X, y, classes=None, weight=None):
-        # If still filling the chunk, then just add the instance to the
-        # current data chunk, wait for it to be filled.
-        self._num_of_processed_instances += 1
+        # This method should work with individual instances, as well as bunch
+        # of instances, since there can be pre-training for warm start.
 
-        # Save X and y to train classifiers later
-        # y is required to be 1x1, and hence the square bracketts.
-        self._chunk_data.add_element(X, [y])
+        # If an individual instance is inputted, then just save X and y to
+        # train from them later.
+        if(len(X) == 1):
+            # Save X and y to train classifiers later
+            # y is required to be 1x1, and hence the square bracketts.
+            y_i = np.array([y])
+            # print(type(X))
+            # print(type(y_i))
+            # print(X)
+            # print(y_i)
+            self._chunk_data.add_element(X, y_i)
 
-        # If at the end of a chunk, start training components
-        # and adjusting weights using information in this chunk.
-        if(self._num_of_processed_instances % self._chunk_size == 0):
-            print("Instance {}".format(self._num_of_processed_instances))
-            self._process_chunk()
+            # If still filling the chunk, then just add the instance to the
+            # current data chunk, wait for it to be filled.
+            self._num_of_processed_instances += 1
+
+            # If at the end of a chunk, start training components
+            # and adjusting weights using information in this chunk.
+            if(self._num_of_processed_instances % self._chunk_size == 0):
+                print("Instance {}".format(self._num_of_processed_instances))
+                self._process_chunk()
+        elif(len(X) > 1):
+            # Input is a chunk. Add them individually.
+            for i in range(len(X)):
+                X_i = np.array([X[i]])
+                y_i = np.array([[y[i]]])
+                # print(X_i)
+                # print(y_i)
+                self._chunk_data.add_element(X_i, y_i)
+                self._num_of_processed_instances += 1
+
+                # If at the end of a chunk, start training components
+                # and adjusting weights using information in this chunk.
+                if(self._num_of_processed_instances % self._chunk_size == 0):
+                    print("Instance {}".format(self._num_of_processed_instances))
+                    self._process_chunk()
+        else:
+            print("Something wrong with the data...")
+            print("len(X) is: {}".format(len(X)))
+        return
 
     def predict(self, X):
-        """ For a given data instance, yields the binary prediction values.
+        """ For a given data instance, yields the prediction values.
 
         Parameters
         ----------
-        X: data instance for which prediction is done.
+        X: numpy.ndarray of shape (n_samples, n_features)
+            Samples for which we want to predict the labels.
 
         Returns
-        ----------
+        -------
         numpy.array
-            A vector with number_of_classes elements where only the
-            class that is predicted as correct is 1 and the rest is 0.
+            Predicted labels for all instances in X.
         """
-        relevance_scores = self.predict_proba(X)
-        single_label_prediction = np.zeros_like(relevance_scores)
-
-        # Now, do a single-label prediction as
-        # the highest value of those scores to be the correct class.
-        single_label_prediction[np.argmax(relevance_scores)] = 1
-        return single_label_prediction
+        predictions = []
+        if(len(X) == 1):
+            predictions.append(np.argmax(self.predict_proba(X)))
+        elif(len(X) > 1):
+            # Add many predictions
+            for i in range(len(X)):
+                relevance_scores = self.predict_proba(X[i])
+                predictions.append(np.argmax(relevance_scores))
+        # print(np.argmax(relevance_scores))
+        return np.array(predictions) #, one_hot
 
     def predict_proba(self, X):
         """ For a given data instance, takes WEIGHTED combination
