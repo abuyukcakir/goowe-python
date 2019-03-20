@@ -8,14 +8,10 @@ from Goowe import Goowe
 
 # Prepare the data stream
 stream = FileStream('./datasets/sea_stream.csv')
-# SEA Generator generates 3 numerical attributes, that vary from 0 to 10,
-# where only 2 of them are relevant to the classification task.
 stream.prepare_for_use()
 
 num_features = stream.n_features
 num_targets = stream.n_targets
-# print(stream.get_target_values())
-# num_classes = len(stream.get_target_values())
 num_classes = stream.n_classes
 
 
