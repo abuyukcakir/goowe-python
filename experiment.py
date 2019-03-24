@@ -1,5 +1,5 @@
 from skmultiflow.data.file_stream import FileStream
-
+import numpy as np
 from Goowe import Goowe
 
 
@@ -23,14 +23,20 @@ goowe = Goowe(n_max_components=N_MAX_CLASSIFIERS,
 goowe.prepare_post_analysis_req(num_features, num_targets, num_classes)
 
 # For the first chunk, there is no prediction.
-for i in range(CHUNK_SIZE):
-    cur = stream.next_sample()
-    X, y = cur[0], cur[1]
-    goowe.partial_fit(X, y)
+
+# X_init, y_init = stream.next_sample(CHUNK_SIZE)
+# print(X_init)
+# print(y_init)
+# goowe.partial_fit(X_init, y_init)
+
+# for i in range(CHUNK_SIZE):
+#     cur = stream.next_sample()
+#     X, y = cur[0], cur[1]
+#     goowe.partial_fit(X, y)
 
 # Now, for the remaining instances, do ITTT (Interleaved Test Then Train).
-while(stream.has_more_samples()):
-    cur = stream.next_sample()
-    X, y = cur[0], cur[1]
-    goowe.predict(X)                        # Test
-    goowe.partial_fit(X, y)             # Then train
+# while(stream.has_more_samples()):
+#     cur = stream.next_sample()
+#     X, y = cur[0], cur[1]
+#     goowe.predict(X)                        # Test
+#     goowe.partial_fit(X, y)             # Then train
