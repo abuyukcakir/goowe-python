@@ -52,7 +52,8 @@ class Goowe(StreamModel):
         # some external stuff that is about the data we are dealing with
         # but useful for recording predictions
         self._num_classes = None
-        self._target_values = None
+        self._target_values = None      # Required to correctly train HTs
+        self._record = False            # Boolean for keeping records to files
 
         # TODO: Implement Sliding Window Continuous Evaluator.
         # What to save at Sliding Window (last n instances) --> will be
@@ -61,7 +62,7 @@ class Goowe(StreamModel):
         # self._sliding_window_truths = FastBuffer(max_size=window_size)
 
     def prepare_post_analysis_req(self, num_features, num_targets,
-                                  num_classes, target_values):
+                                  num_classes, target_values, record=False):
         # Need to get the dataset information but we do not want to
         # take it as an argument to the classifier itself, nor we do want to
         # ask it at each data instance. Hence we take dataset info from user
@@ -75,6 +76,22 @@ class Goowe(StreamModel):
         # can have.
         self._num_classes = num_classes
         self._target_values = target_values
+        self._record = record
+
+        if(self._record):
+            # Create files that keeps record of:
+            #   - weights at each chunk
+            #   - individual component results for every instance
+            #   - ground truths for every instance.
+            self._f_comp_preds = open("component_predictions.csv", "w+")
+            self._f_truths = open("ground_truths.csv", "w+")
+            self._f_weights = open("weights.csv", "w+")
+
+            self._f_comp_preds.write(str(self._chunk_size) + '\n')
+
+            self._f_comp_preds.close()
+            self._f_truths.close()
+            self._f_weights.close()
         return
 
     def _get_components_predictions_for_instance(self, inst):
@@ -100,6 +117,8 @@ class Goowe(StreamModel):
             # print("Component {}'s Prediction: {}".format(k, kth_comp_pred))
             preds[k, :] = kth_comp_pred[0]
 
+        print('Component Predictions:')
+        print(preds)
         return preds
 
     def _adjust_weights(self):
@@ -158,6 +177,16 @@ class Goowe(StreamModel):
                 self._weights[i] = (self._weights[i] - min) / (max - min)
         return
 
+    def _normalize_weights_softmax(self):
+        """ Normalizes the weights of the ensemble to (0, 1) range.
+        Performs (x_i - min(x)) / (max(x) - min(x)) on the nonzero elements
+        of the weight vector.
+        """
+        cur_weights = self._weights[:self._num_of_current_classifiers]
+        self._weights[:self._num_of_current_classifiers] = np.exp(cur_weights) / sum(np.exp(cur_weights))
+
+        return
+
     def _process_chunk(self):
         """ A subroutine that runs at the end of each chunk, allowing
         the components to be trained and ensemble weights to be adjusted.
@@ -170,6 +199,12 @@ class Goowe(StreamModel):
         """
         new_clf = HoeffdingTree()  # with default parameters for now
         new_clf.reset()
+
+        # Save records of previous chunk
+        if(self._record and self._num_of_current_classifiers > 0):
+            self._record_truths_this_chunk()
+            self._record_comp_preds_this_chunk()
+            self._record_weights_this_chunk()
 
         # Case 1: No classifier in the ensemble yet, first chunk:
         if(self._num_of_current_classifiers == 0):
@@ -198,7 +233,7 @@ class Goowe(StreamModel):
                 self._weights[index_of_lowest_weight] = 1.0
 
             # Normalizing weigths to simplify numbers
-            self._normalize_weights()       # maybe useful. we'll see.
+            self._normalize_weights_softmax()       # maybe useful. we'll see.
             print("After normalization weights: ")
             print(self._weights)
         # Ensemble maintenance is done. Now train all classifiers
@@ -214,6 +249,40 @@ class Goowe(StreamModel):
             self._classifiers[k].partial_fit(data_features, data_truths,
                                              classes=self._target_values)
         print("Training the components with the current chunk completed...")
+        return
+
+    def _record_truths_this_chunk(self):
+        f = open("ground_truths.csv", "ab")
+
+        data_truths = self._chunk_data.get_targets_matrix()
+        data_truths = data_truths.astype(int).flatten()
+
+        # Default behaviour is to store list of lists for savetxt.
+        # Hence, to prevent newline after each element of list, we surround
+        # the truth array with one more set of bracketts.
+        np.savetxt(f, [data_truths], delimiter=",", fmt='%d')
+
+        f.close()
+        return
+
+    def _record_comp_preds_this_chunk(self):
+        f = open("component_predictions.csv", "a+")
+        np.savetxt(f, [self._num_of_current_classifiers], fmt='%d')
+
+        comp_preds = np.array(self._chunk_comp_preds.get_queue())
+
+        for i in range(len(comp_preds)):
+            np.savetxt(f, comp_preds[i], delimiter=',', fmt='%1.5f')
+        f.close()
+        return
+
+    def _record_weights_this_chunk(self):
+        f = open("weights.csv", "a+")
+        np.savetxt(f, [self._num_of_current_classifiers], fmt='%d')
+
+        weights = self._weights
+        np.savetxt(f, [weights], delimiter=',', fmt='%1.5f')
+        f.close()
         return
 
     # --------------------------------------------------
@@ -290,6 +359,8 @@ class Goowe(StreamModel):
                 relevance_scores = self.predict_proba(X[i])
                 predictions.append(np.argmax(relevance_scores))
         # print(np.argmax(relevance_scores))
+        print('Ensemble Prediction:')
+        print(np.array(predictions))
         return np.array(predictions) #, one_hot
 
     def predict_proba(self, X):
@@ -329,7 +400,12 @@ class Goowe(StreamModel):
         pass
 
     def get_info(self):
-        pass
+        return 'The Ensemble GOOWE (Bonab and Can, 2017) with' + \
+            ' - n_max_components: ' + str(self._num_of_max_classifiers) + \
+            ' - num_of_current_components: ' + str(self._num_of_current_classifiers) + \
+            ' - chunk_size: ' + str(self._chunk_size) + \
+            ' - num_dimensions_in_label_space(num_classes): ' + str(self._num_classes) + \
+            ' - recording: ' + str(self._record)
 
     def get_class_type(self):
         pass
